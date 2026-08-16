@@ -1,0 +1,119 @@
+# Programador de las tareas periódicas del CRM de Carryt.
+#
+# Por qué GitHub Actions y no el cron del host: los Cron Jobs de Render son de
+# pago, y la regla del proyecto es buscar la vía gratis mientras no haya
+# ingresos. Un workflow programado no cuesta nada y, de paso, despierta al
+# motor (el plan gratis de Render lo duerme a los 15 min de inactividad).
+#
+# QUÉ HACE FALTA UNA SOLA VEZ (tres cosas, todas en el navegador):
+#   1. ENCENDER ACTIONS EN ESTE REPOSITORIO. Es un fork, y GitHub deja los
+#      workflows programados APAGADOS en los forks: si no se enciende, este
+#      archivo existe pero no corre nunca. Pestaña "Actions" del repositorio ->
+#      el botón verde de habilitar.
+#   2. En Render, poner la variable CRON_SECRET en el motor (16+ caracteres).
+#      Sin ella las rutas responden 503 a propósito, y no corren.
+#   3. En GitHub, guardar EL MISMO valor en
+#      Settings -> Secrets and variables -> Actions -> New repository secret,
+#      con el nombre CRON_SECRET.
+#   Tiene que ser el MISMO texto en los dos lados: el motor compara el token
+#   con comparación de tiempo constante y rechaza cualquier otro con 403.
+#
+# Para probar sin esperar al horario: Actions -> "Tareas periódicas del CRM"
+# -> "Run workflow" -> tarea "todas". Si sale verde, quedó montado.
+#
+# OJO: GitHub apaga los workflows programados en repositorios sin actividad
+# durante 60 días. Si algún día dejan de correr, es eso: se re-encienden con
+# un "Run workflow" a mano.
+#
+# Cómo se lee un fallo:
+#   503 -> falta CRON_SECRET en Render.
+#   403 -> el secreto de GitHub y el de Render no son iguales.
+#   200 -> corrió; el cuerpo de la respuesta queda en el registro.
+
+name: Tareas periódicas del CRM
+
+on:
+  schedule:
+    - cron: "0 * * * *"    # buzones: cada hora en punto
+    - cron: "10 5 * * *"   # tasas de cambio: diario, ~1:10 a.m. en RD
+    - cron: "25 5 * * *"   # consolidado de telemetría: diario
+  workflow_dispatch:
+    inputs:
+      tarea:
+        description: "Cuál correr a mano"
+        required: true
+        default: todas
+        type: choice
+        options: [todas, buzones, tasas, telemetria]
+
+jobs:
+  correr:
+    name: Llamar al motor
+    runs-on: ubuntu-latest
+    env:
+      MOTOR: https://carryt-crm-motor.onrender.com
+      SECRETO: ${{ secrets.CRON_SECRET }}
+      DISPARO: ${{ github.event.schedule }}
+      MANUAL: ${{ inputs.tarea }}
+    steps:
+      - name: Comprobar que el secreto está guardado
+        run: |
+          if [ -z "$SECRETO" ]; then
+            echo "::error::Falta el secreto CRON_SECRET en este repositorio."
+            echo "Guardalo en Settings > Secrets and variables > Actions,"
+            echo "con el MISMO valor que tiene el motor en Render."
+            exit 1
+          fi
+
+      - name: Despertar el motor
+        run: |
+          # El plan gratis de Render duerme; la primera llamada tarda ~1 min.
+          for intento in 1 2 3; do
+            estado=$(curl -s -o /tmp/salud.txt -w '%{http_code}' -m 180 "$MOTOR/health" || echo 000)
+            if [ "$estado" = "200" ]; then
+              echo "Motor despierto: $(cat /tmp/salud.txt)"
+              exit 0
+            fi
+            echo "Intento $intento devolvió $estado; reintentando..."
+            sleep 15
+          done
+          echo "::error::El motor no respondió en $MOTOR/health después de 3 intentos."
+          exit 1
+
+      - name: Correr las tareas que tocan
+        run: |
+          # Qué corre en esta pasada: por horario, o lo que se pidió a mano.
+          tareas=""
+          case "$DISPARO" in
+            "0 * * * *")  tareas="internal/sync/mailboxes" ;;
+            "10 5 * * *") tareas="internal/sync/rates" ;;
+            "25 5 * * *") tareas="internal/telemetry/rollup" ;;
+          esac
+          if [ -n "$MANUAL" ]; then
+            case "$MANUAL" in
+              buzones)     tareas="internal/sync/mailboxes" ;;
+              tasas)       tareas="internal/sync/rates" ;;
+              telemetria)  tareas="internal/telemetry/rollup" ;;
+              todas)       tareas="internal/sync/mailboxes internal/sync/rates internal/telemetry/rollup" ;;
+            esac
+          fi
+
+          if [ -z "$tareas" ]; then
+            echo "::warning::Ningún horario coincidió ('$DISPARO'). Nada que hacer."
+            exit 0
+          fi
+
+          fallos=0
+          for ruta in $tareas; do
+            echo "--- $ruta ---"
+            codigo=$(curl -s -o /tmp/respuesta.txt -w '%{http_code}' -m 300 \
+              -H "Authorization: Bearer $SECRETO" "$MOTOR/$ruta" || echo 000)
+            cuerpo=$(cat /tmp/respuesta.txt)
+            case "$codigo" in
+              200|201) echo "OK ($codigo): $cuerpo" ;;
+              503) echo "::error::$ruta devolvió 503 — falta CRON_SECRET en Render."; fallos=1 ;;
+              403) echo "::error::$ruta devolvió 403 — el secreto de GitHub no coincide con el de Render."; fallos=1 ;;
+              *)   echo "::error::$ruta devolvió $codigo: $cuerpo"; fallos=1 ;;
+            esac
+          done
+          exit $fallos
