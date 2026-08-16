@@ -339,3 +339,39 @@ Investigado a fondo hoy, y no es lo que parecía:
 **DECISIÓN DEL FOUNDER — pendiente.** Ninguna de las dos se puede tomar sola:
 la primera cambia lo que él configura en Google Cloud, la segunda cambia código
 de su fork y apaga una función.
+
+### ✅ DECIDIDO 16-ago: modo "Prueba" de Google
+
+El founder eligió el modo Prueba: **no se pierde ninguna función** y no se
+parchea código ajeno. El precio es reconectar una vez por semana.
+
+**Dirección de retorno — VERIFICADA EN VIVO, no deducida:**
+
+```
+https://carryt-crm-motor.onrender.com/api/auth/callback/google
+```
+
+Comprobado contra el motor desplegado: `/api/auth/ok` responde `{"ok":true}`
+(better-auth está montado en `/api/auth`) y `/api/auth/callback/google`
+responde 302, o sea que la ruta existe. Sin `basePath` propio en
+`AuthModule.forRoot`, así que es el de por defecto.
+
+**Los dos permisos que hay que declarar en la pantalla de consentimiento:**
+
+```
+https://www.googleapis.com/auth/gmail.readonly
+https://www.googleapis.com/auth/calendar.readonly
+```
+
+**Las dos APIs que hay que habilitar en el proyecto** (si no, el permiso se
+concede pero la sincronización falla): **Gmail API** y **Google Calendar API**.
+
+**Las dos variables que van al motor en Render** y luego "Save, rebuild and
+deploy": `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`
+(nombres exactos, de `packages/auth/src/env.ts:31`).
+
+**Por qué caduca a los 7 días:** Google acorta el refresh token de los permisos
+sensibles cuando la pantalla de consentimiento está en estado "Prueba". No es
+un fallo del CRM. Cuando el correo deje de sincronizar, se entra a
+Configuración → Conexiones y se reconecta Google. La sesión del CRM dura 7 días
+igual (`session.expiresIn`), así que coincide con el ciclo natural de entrar.
