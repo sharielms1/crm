@@ -1,0 +1,25 @@
+# Blueprint de Render para el MOTOR del CRM (crm-api) — preparado 15-ago-2026.
+# En Render: New → Blueprint → conectar este repo → Render lee este archivo.
+# Las variables con `sync: false` las pide en pantalla al crear el servicio
+# (los valores viven en C:/Users/shari/comp-crm/.env — jamás en git).
+services:
+  - type: web
+    name: crm-api
+    runtime: docker
+    plan: free # OJO: free duerme tras ~15 min sin tráfico (el 1er request luego tarda ~1 min). "starter" (US$7/mes) no duerme.
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        sync: false
+      - key: ALLOWED_SIGN_IN
+        sync: false
+      - key: API_URL
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: CRM_TELEMETRY_DISABLED
+        value: "1"

@@ -1,0 +1,33 @@
+# Contexto de build del Dockerfile del motor (apps/api/Dockerfile).
+# Fuera todo lo pesado o secreto; los fuentes de apps/app y apps/agent se
+# quedan DENTRO a propósito (pesan poco y así no hay que pelear con las
+# reglas de re-inclusión de .dockerignore — el Dockerfile solo copia lo suyo).
+
+.git
+.githooks
+.github
+.claude
+.agents
+.vercel
+
+# Dependencias e intermedios — se reconstruyen dentro de la imagen
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/coverage
+**/.output
+**/.eve
+
+# El cliente Prisma local (Windows) — la imagen genera el suyo
+packages/db/src/generated
+
+# Secretos: JAMÁS entran al contexto
+.env
+.env.*
+!.env.example
+
+# Documentación — no afecta el build
+docs
+adrs
+*.md

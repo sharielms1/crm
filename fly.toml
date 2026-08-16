@@ -1,0 +1,35 @@
+# fly.toml — MOTOR del CRM (crm-api) en Fly.io — preparado 15-ago-2026.
+# Uso: `fly launch --no-deploy` (lee este archivo tal cual; decir NO a que lo
+# regenere), luego `fly secrets set DATABASE_URL=... BETTER_AUTH_SECRET=...
+# ALLOWED_SIGN_IN=... APP_URL=... API_URL=...` y por último `fly deploy`.
+# Los valores de los secrets viven en C:/Users/shari/comp-crm/.env.
+
+app = "carryt-crm-api"
+primary_region = "mia" # Miami: lo más cerca de RD
+
+[build]
+  dockerfile = "apps/api/Dockerfile"
+
+[env]
+  PORT = "3001"
+  CRM_TELEMETRY_DISABLED = "1"
+
+[http_service]
+  internal_port = 3001
+  force_https = true
+  # Con auto-stop la máquina se apaga sin tráfico y despierta sola en el
+  # primer request (~1s): es lo que mantiene el costo en centavos.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "20s"
+    method = "GET"
+    path = "/health"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
